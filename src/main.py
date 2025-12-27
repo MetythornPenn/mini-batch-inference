@@ -9,10 +9,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 
-# -----------------------------
-# Simple PyTorch model example
-# -----------------------------
-class TinyMLP(nn.Module):
+class MLP(nn.Module):
     def __init__(self, in_dim: int = 3, hidden: int = 16, out_dim: int = 1):
         super().__init__()
         self.net = nn.Sequential(
@@ -24,23 +21,14 @@ class TinyMLP(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x)
 
-
-# -----------------------------
-# Request/Response schemas
-# -----------------------------
 class PredictRequest(BaseModel):
     # Example: [1.0, 2.0, 4.0]
     x: List[float]
-
 
 class PredictResponse(BaseModel):
     y: float
     batch_size_used: int
 
-
-# -----------------------------
-# Micro-batching structures
-# -----------------------------
 @dataclass
 class _Item:
     x: torch.Tensor
@@ -128,13 +116,10 @@ class MicroBatcher:
                         it.fut.set_exception(e)
 
 
-# -----------------------------
-# FastAPI app
-# -----------------------------
 app = FastAPI()
 
 DEVICE = "cpu"  # set "cuda" if you have GPU and model supports it
-model = TinyMLP(in_dim=3)
+model = MLP(in_dim=3)
 batcher = MicroBatcher(model=model, device=DEVICE, max_batch_size=32, max_wait_ms=10)
 
 
