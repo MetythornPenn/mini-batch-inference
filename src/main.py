@@ -1,4 +1,5 @@
 import asyncio
+import os
 import time
 from dataclasses import dataclass
 from typing import List, Optional
@@ -7,6 +8,32 @@ import torch
 import torch.nn as nn
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
+
+
+def select_best_device() -> str:
+    """
+    Pick the GPU with the most free memory; fall back to CPU if CUDA is unavailable.
+    If the DEVICE env var is set, it takes precedence (e.g., DEVICE=cuda:0 or cpu).
+    """
+    env_device = os.getenv("DEVICE")
+    if env_device:
+        return env_device
+
+    if torch.cuda.is_available():
+        best_idx = None
+        best_free_mem = -1
+        for idx in range(torch.cuda.device_count()):
+            try:
+                free_mem, _ = torch.cuda.mem_get_info(idx)
+            except RuntimeError:
+                continue
+            if free_mem > best_free_mem:
+                best_free_mem = free_mem
+                best_idx = idx
+        if best_idx is not None:
+            return f"cuda:{best_idx}"
+
+    return "cpu"
 
 
 class MLP(nn.Module):
@@ -40,7 +67,7 @@ class MicroBatcher:
     def __init__(
         self,
         model: nn.Module,
-        device: str = "cpu",
+        device: str = "cuda:1",
         max_batch_size: int = 1024,
         max_wait_ms: int = 100,
     ):
@@ -119,9 +146,9 @@ class MicroBatcher:
 
 app = FastAPI()
 
-DEVICE = "cpu"  # set "cuda" if you have GPU and model supports it
+DEVICE = select_best_device()
 model = MLP(in_dim=3)
-batcher = MicroBatcher(model=model, device=DEVICE, max_batch_size=32, max_wait_ms=10)
+batcher = MicroBatcher(model=model, device=DEVICE, max_batch_size=2048, max_wait_ms=100)
 
 
 @app.on_event("startup")
