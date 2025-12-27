@@ -6,7 +6,7 @@ from typing import List, Optional
 import torch
 import torch.nn as nn
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class MLP(nn.Module):
@@ -22,8 +22,9 @@ class MLP(nn.Module):
         return self.net(x)
 
 class PredictRequest(BaseModel):
-    # Example: [1.0, 2.0, 4.0]
-    x: List[float]
+    x: List[float] = Field(
+        ..., description="Input features", example=[1.0, 2.0, 4.0]
+    )
 
 class PredictResponse(BaseModel):
     y: float
@@ -40,8 +41,8 @@ class MicroBatcher:
         self,
         model: nn.Module,
         device: str = "cpu",
-        max_batch_size: int = 32,
-        max_wait_ms: int = 10,
+        max_batch_size: int = 1024,
+        max_wait_ms: int = 100,
     ):
         self.model = model.to(device).eval()
         self.device = device
@@ -141,3 +142,15 @@ async def predict(req: PredictRequest):
     # y_tensor shape [1]; make it float
     y = float(y_tensor.item())
     return PredictResponse(y=y, batch_size_used=used_bs)
+
+
+@app.post("/predict_direct", response_model=PredictResponse)
+async def predict_direct(req: PredictRequest):
+    """Baseline inference endpoint that skips the micro-batcher."""
+
+    x = torch.tensor(req.x, dtype=torch.float32).unsqueeze(0).to(DEVICE)
+    with torch.inference_mode():
+        y_tensor = model(x)
+
+    y = float(y_tensor.squeeze(0).item())
+    return PredictResponse(y=y, batch_size_used=1)
